@@ -72,9 +72,9 @@ def getAllAreas(request):
 @api_view(['GET', 'POST'])
 def getRecommendsByUser(request):
 	if request.method == 'GET':
-		userId = request.GET.get('userid',None)
-		areaCode = request.GET.get('areacode',0)
-		sigunguCode = request.GET.get('sigungucode',0)
+		userId = request.GET.get('userId',None)
+		areaCode = request.GET.get('areaCode',0)
+		sigunguCode = request.GET.get('sigunguCode',0)
 
 		areaRecommender = recommender.AreaRecommender()
 		routeOptimizer = recommender.RouteOptimizer()
