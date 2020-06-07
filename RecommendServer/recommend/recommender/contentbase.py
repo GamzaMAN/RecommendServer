@@ -7,27 +7,18 @@ import pymysql
 import pickle
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans
 import sklearn.metrics
 from scipy import linalg, dot
 
 from secretInfo import mysqlInfo
 
-GLOBAL_PATH = "./recommend/contentbase/_cache_data/"
+GLOBAL_PATH = "./recommend/recommender/_cache_data/"
 LOCAL_PATH = "./_cache_data/"
 
-class UserSimilarityAnalizer:
+class UserItemSimilarityAnalyzer:
 	def updateSimilarity(self, path=GLOBAL_PATH):
 		db = pymysql.connect(host='127.0.0.1', port=3306, user=mysqlInfo.DB_ID,passwd=mysqlInfo.DB_PW, db=mysqlInfo.DB_NAME, charset='utf8')
 		cursor = db.cursor()
-
-		file = open(path + "areaCode.dict","rb")
-		areaSet=pickle.load(file)
-		file.close()
-
-		file = open(path + "sigunguCode.dict","rb")
-		sigunguSet=pickle.load(file)
-		file.close()
 
 		# 아이템 속성 정
 		itemResult = self.makeItemProf(cursor)
@@ -79,10 +70,25 @@ class UserSimilarityAnalizer:
 		userLogs.columns = ['userId', 'areaId', 'count']
 
 		# itemprof 와 사이즈 맞추기
+		# DF 직접 생성후 concat으로 속도 개선
+		tempDict = dict()
+		tempDict['userId'] = list()
+		tempDict['areaId'] = list()
+		tempDict['count'] = list()
+
+		tempIndex = list()
+
 		count = userLogs.index.size
 		for areaId in itemProf.index:
-			userLogs.loc[count] = ["_", areaId, 0]
-			count+=1
+			tempDict['userId'].append("_")
+			tempDict['areaId'].append(areaId)
+			tempDict['count'].append(0)
+			tempIndex.append(count)
+			count += 1
+
+		tempDf = pd.DataFrame(tempDict, index=tempIndex)
+
+		userLogs = pd.concat([userLogs, tempDf])
 
 		# sparse 데이터로 변환
 		userLogs['count'] = userLogs['count'].astype("Sparse[int]")
@@ -120,18 +126,10 @@ class UserSimilarityAnalizer:
 		return data
 
 
-class AreaRecommender:
+class ContentBaseRecommender:
 	def getRecommendedArea(self, userId="jn8121@naver.com", areaCode=0, sigunguCode=0, path=GLOBAL_PATH):
 		db = pymysql.connect(host='127.0.0.1', port=3306, user=mysqlInfo.DB_ID,passwd=mysqlInfo.DB_PW, db=mysqlInfo.DB_NAME, charset='utf8')
 		cursor = db.cursor()
-
-		file = open(path + "areaCode.dict","rb")
-		areaSet=pickle.load(file)
-		file.close()
-
-		file = open(path + "sigunguCode.dict","rb")
-		sigunguSet=pickle.load(file)
-		file.close()
 
 		userItemSim = pd.read_pickle(path + "userItemSimilarity.df")
 
@@ -155,12 +153,9 @@ class AreaRecommender:
 
 		itemIdSim = list()
 
-		for uid in userItemSim.index:
-			if uid == userId:
-				for cid in userItemSim.columns:
-					if userItemSim.loc[uid][cid] > tend:
-						itemIdSim.append((cid, userItemSim.loc[uid][cid]))
-				break
+		for cid in userItemSim.columns:
+			if userItemSim.loc[userId][cid] > tend:
+				itemIdSim.append((cid, userItemSim.loc[userId][cid]))
 
 		itemIdSim.sort(key = lambda element : element[1], reverse=True)
 
@@ -214,125 +209,6 @@ class AreaRecommender:
 		return result
 
 
-class RouteOptimizer:
-	def __init__(self):
-		self.INF = 987654321
-
-	def getOptimizedRoute(self, recommends):
-		recommendsList = self.clusterAreas(recommends)
-
-		for clusteredRecommends in recommendsList:
-			clusteredRecommends['area'] = self.sortAreasByTSP(clusteredRecommends)
-
-		return recommendsList
-
-	def clusterAreas(self, recommends, targetAreaNum=4):
-		areaSize = len(recommends['area'])
-		clusterSize = areaSize//targetAreaNum
-
-		mapXY = list()
-
-		for cid in recommends['area']:
-			curInfo = recommends['detail'][cid]
-			mapXY.append([curInfo['mapX'], curInfo['mapY']])
-
-
-		routeSet = KMeans(n_clusters=clusterSize, random_state=0).fit(mapXY)
-
-
-		numOfSet = [0 for _ in range(clusterSize)]
-
-		for label in routeSet.labels_:
-			numOfSet[label] += 1
-
-
-		targetLabels = list()
-		for i, n in enumerate(numOfSet):
-			if n <= 16 and n >= targetAreaNum:
-				targetLabels.append(i)
-
-
-		recommendsList = list()
-
-		for k in range(len(targetLabels)):
-			clusteredRecommends = dict()
-			clusteredRecommends['area'] = list()
-			clusteredRecommends['detail'] = dict()
-
-			for i, cid in enumerate(recommends['area']):
-				if routeSet.labels_[i] == targetLabels[k]:
-					clusteredRecommends['area'].append(cid)
-					clusteredRecommends['detail'][cid] = recommends['detail'][cid]
-
-			recommendsList.append(clusteredRecommends)
-
-		return recommendsList
-
-
-	def sortAreasByTSP(self, clusteredRecommends):
-		N = len(clusteredRecommends['area'])
-		board = np.zeros( (N,N) ) 
-
-		for i, cid in enumerate(clusteredRecommends['area']):
-			fromX = float(clusteredRecommends['detail'][cid]['mapX'])*1000
-			fromY = float(clusteredRecommends['detail'][cid]['mapY'])*1000
-
-			for j, tCid in enumerate(clusteredRecommends['area']):
-				toX = float(clusteredRecommends['detail'][tCid]['mapX'])*1000
-				toY = float(clusteredRecommends['detail'][tCid]['mapY'])*1000
-
-				board[i][j] = ((fromX - toX)**2 + (fromY - toY)**2)**0.5
-
-		route = list()
-		minDist = self.INF
-		start = -1
-
-		for k in range(N):
-			DP = [[None]*(1<<N) for _ in range(N)]
-			route.append([[-1]*(1<<N) for _ in range(N)])
-
-			c = self.TSP(k,(1<<k), route[k], DP, board, N)
-
-			if c < minDist:
-				minDist = c
-				start = k
-
-		minRoute = list()
-		self.getRoute(start,(1<<start),route[start],minRoute)
-
-		rstAreaList = list()
-
-		for i in minRoute:
-			rstAreaList.append(clusteredRecommends['area'][i])
-
-		return rstAreaList
-
-	def TSP(self, cur, visited, route, DP, board, N):
-		if DP[cur][visited] is not None:
-			return DP[cur][visited]
-
-		if visited == (1 << N) - 1:
-			return 0
-
-		cost = self.INF
-		for i in range(N):
-			if visited & (1 << i) == 0 and board[cur][i] != 0:
-				tmp = self.TSP(i, visited | (1<<i), route, DP, board, N)
-
-				if (tmp+board[cur][i]) < cost:
-					cost = tmp + board[cur][i]
-					route[cur][visited] = i
-
-		DP[cur][visited] = cost
-		return cost
-
-	def getRoute(self, cur, visited, route, minRoute):
-		minRoute.append(cur)
-		nextNode = route[cur][visited]
-		if nextNode >= 0:
-			self.getRoute(nextNode, visited | (1 << (nextNode)), route, minRoute)
-
-
 class FirstTesterManager:
 	def makeTestSet(self, path=GLOBAL_PATH):
 		db = pymysql.connect(host='127.0.0.1', port=3306, user=mysqlInfo.DB_ID,passwd=mysqlInfo.DB_PW, db=mysqlInfo.DB_NAME, charset='utf8')
@@ -357,12 +233,16 @@ class FirstTesterManager:
 		            cat3Id=categories[2][cat2Id]['items'][c3]
 
 		            sql = "select * from recommend_area where cat3="
-		            sql += "\"" + cat3Id +"\";"
+		            sql += "\"" + cat3Id +"\" "
+		            sql += "and readCount = (select max(readCount) from recommend_area where cat3="
+		            sql += "\"" + cat3Id +"\" );"
 
 		            qResult = cursor.execute(sql)
 
 		            if qResult > 0:
 		            	areas = cursor.fetchall()
+		            	# 2가 readCount
+
 		            	testArea = self.makeDict(areas[0])
 
 		            	testSet['area'].append(areas[0][0])
@@ -390,11 +270,12 @@ class FirstTesterManager:
 		return result
 
 if __name__ == '__main__':
-	analyzer = UserSimilarityAnalizer()
-	analyzer.updateSimilarity(LOCAL_PATH)
+	# analyzer = UserItemSimilarityAnalyzer()
+	# analyzer.updateSimilarity(LOCAL_PATH)
 	
-	# recommender = AreaRecommender()
-	# recommends = recommender.getRecommendedArea("jn8121@naver.com", 32, 0, LOCAL_PATH)
+	recommender = ContentBaseRecommender()
+	recommends = recommender.getRecommendedArea("jn8121@naver.com", 0, 0, LOCAL_PATH)
+	print(recommends)
 
 	# print(recommends)
 

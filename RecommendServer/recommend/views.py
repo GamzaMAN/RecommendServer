@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters.filterset import FilterSet
 
-from recommend.contentbase import recommender
+from recommend.recommender import contentbase, collaborative, merge, route
 
 class SearchAreaByQuery(generics.ListAPIView):
 	queryset = Area.objects.all()
@@ -73,28 +73,37 @@ def getAllAreas(request):
 def getRecommendsByUser(request):
 	if request.method == 'GET':
 		userId = request.GET.get('userId',None)
-		areaCode = request.GET.get('areaCode',0)
-		sigunguCode = request.GET.get('sigunguCode',0)
+		areaCode = int(request.GET.get('areaCode',0))
+		sigunguCode = int(request.GET.get('sigunguCode',0))
 
-		areaRecommender = recommender.AreaRecommender()
-		routeOptimizer = recommender.RouteOptimizer()
+		contentBaseRecommender = contentbase.ContentBaseRecommender()
+		collaborativeRecommender = collaborative.CollaborativeRecommender()
+		recommendMerger = merge.RecommendMerger()
+		routeOptimizer = route.RouteOptimizer()
 
-		result = areaRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+		contentBasedRecommends = contentBaseRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+		predictedRecommends = collaborativeRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+
+
+		recommends = recommendMerger.merge(contentBasedRecommends, predictedRecommends)
 
 		for i in range(5):
 			try:
-				result = areaRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+				contentBasedRecommends = contentBaseRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+				predictedRecommends = collaborativeRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+
+				recommends = recommendMerger.merge(contentBasedRecommends, predictedRecommends)
 				
 				if areaCode != 0:
-					resultList = routeOptimizer.getOptimizedRoute(result)
+					resultList = routeOptimizer.getOptimizedRoute(recommends)
 					return Response(resultList)
 				else:
-					return JsonResponse(result)
+					return JsonResponse(recommends)
 			except:
-				result = "get recommends fail"
+				recommends = "get recommends fail"
 				continue
 
-		return Response(result, status=status.HTTP_204_NO_CONTENT)
+		return Response(recommends, status=status.HTTP_204_NO_CONTENT)
 
 	elif request.method == 'POST':
 		return Response(status=status.HTTP_400_BAD_REQUEST)
@@ -102,7 +111,7 @@ def getRecommendsByUser(request):
 @api_view(['GET', 'POST'])
 def getTestSet(request):
 	if request.method == 'GET':
-		firstTesterManager = recommender.FirstTesterManager()
+		firstTesterManager = contentbase.FirstTesterManager()
 
 		for i in range(5):
 			try:
@@ -138,8 +147,11 @@ def join(request):
 				if logSerializer.is_valid():
 					logSerializer.save()
 
-			userSimilarityAnalizer = recommender.UserSimilarityAnalizer()
-			userSimilarityAnalizer.updateSimilarity()
+			predictionUpdater = collaborative.UserRelationAnalyzer()
+			predictionUpdater.updatePrediction()
+
+			similarityUpdater = contentbase.UserItemSimilarityAnalyzer()
+			similarityUpdater.updateSimilarity()
 
 			return Response(status=status.HTTP_201_CREATED)
 		else:
