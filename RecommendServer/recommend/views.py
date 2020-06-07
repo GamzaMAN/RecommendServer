@@ -8,28 +8,48 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters.filterset import FilterSet
+from rest_framework import filters
 
 from recommend.recommender import contentbase, collaborative, merge, route
+from django.db.models import Q
 
-class SearchAreaByQuery(generics.ListAPIView):
-	queryset = Area.objects.all()
-	serializer_class = AreaSerializer
-	filter_backends = [ DjangoFilterBackend ]
-	filter_fields = ['readCount', 'contentId', 'contentTypeId', 'areaCode', 'sigunguCode', 'cat1', 'cat2', 'cat3', 'mapX', 'mapY', 'mLevel', 'title', 'firstImage', 'firstImage2', 'homepage', 'overview', 'tel', 'addr1', 'addr2', 'zipCode']
+# class SearchAreaByQuery(generics.ListAPIView):
+# 	queryset = Area.objects.all()
+# 	serializer_class = AreaSerializer
+# 	search_fields = ['title', 'overview']
+# 	filter_backends = [filters.SearchFilter]
+	
+# 	# filter_backends = [ DjangoFilterBackend ]
+# 	# filter_fields = ['readCount', 'contentId', 'contentTypeId', 'areaCode', 'sigunguCode', 'cat1', 'cat2', 'cat3', 'mapX', 'mapY', 'mLevel', 'title', 'firstImage', 'firstImage2', 'homepage', 'overview', 'tel', 'addr1', 'addr2', 'zipCode']
 
-	def isValidQueryParams(self, queryParams):
-		if len(queryParams.keys()) == 0:
-			return False
+# 	# def isValidQueryParams(self, queryParams):
+# 	# 	if len(queryParams.keys()) == 0:
+# 	# 		return False
 
-		for query in queryParams.keys():
-			if query not in self.filter_fields:
-				return False
-		return True
+# 	# 	for query in queryParams.keys():
+# 	# 		if query not in self.filter_fields:
+# 	# 			return False
+# 	# 	return True
 
-	def get(self, request, *args, **kwargs):
-		if not self.isValidQueryParams(request.query_params):
-			return Response(status=status.HTTP_204_NO_CONTENT)
-		return super(SearchAreaByQuery, self).get(request, *args, **kwargs)
+# 	# def get(self, request, *args, **kwargs):
+# 	# 	if not self.isValidQueryParams(request.query_params):
+# 	# 		return Response(status=status.HTTP_204_NO_CONTENT)
+# 	# 	return super(SearchAreaByQuery, self).get(request, *args, **kwargs)
+
+@api_view(['GET'])
+def searchAreaByQuery(request):
+	if request.method == 'GET':
+		text = request.GET.get('search',None)
+		areaCode = int(request.GET.get('areaCode',0))
+
+		area = Area.objects.filter(areaCode__exact=areaCode)
+		area = area.filter( Q(title__contains=text) | Q(overview__contains=text) )
+
+		areaSerializer = AreaSerializer(area, many=True)
+
+		print(areaSerializer)
+
+		return Response(areaSerializer.data)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])

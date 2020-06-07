@@ -3,7 +3,8 @@ from rest_framework.urlpatterns import format_suffix_patterns
 from . import views
 
 urlpatterns = [
-    path('search/area', views.SearchAreaByQuery.as_view()),
+    # path('search/area', views.SearchAreaByQuery.as_view()),
+    path('search/area', views.searchAreaByQuery),
     path('search/area/<int:cid>', views.searchAreaById),
     path('search/area/all/', views.getAllAreas),
     path('recommend/user', views.getRecommendsByUser),
