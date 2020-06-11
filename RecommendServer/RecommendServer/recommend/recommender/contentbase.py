@@ -15,6 +15,8 @@ from secretInfo import mysqlInfo
 GLOBAL_PATH = "./recommend/recommender/_cache_data/"
 LOCAL_PATH = "./_cache_data/"
 
+import time
+
 class UserItemSimilarityAnalyzer:
 	def updateSimilarity(self, path=GLOBAL_PATH):
 		db = pymysql.connect(host='127.0.0.1', port=3306, user=mysqlInfo.DB_ID,passwd=mysqlInfo.DB_PW, db=mysqlInfo.DB_NAME, charset='utf8')
@@ -101,6 +103,7 @@ class UserItemSimilarityAnalyzer:
 
 		return (userAreaCount, userAreaCountMat)
 
+
 	def getAreaInfo(self, cursor, areaCode=0, sigunguCode=0):
 		sql = "select contentId, overview, title from recommend_area"
 
@@ -145,58 +148,82 @@ class ContentBaseRecommender:
 		elif sigunguCode==0:
 			maxAreas = 60
 
-		recommends = dict()
-		recommends['area'] = list()
-		recommends['detail'] = dict()
+		recommends = list()
 
 		# 해당 사용자에 대한 여행지 contentId 추출
 
 		itemIdSim = list()
 
-		for cid in userItemSim.columns:
-			if userItemSim.loc[userId][cid] > tend:
-				itemIdSim.append((cid, userItemSim.loc[userId][cid]))
+		# get user Count 
+		userIdNum = 0
+		for uid in userItemSim.index:
+			if uid == userId:
+				break
+			userIdNum += 1
+
+		userItemSimMat = userItemSim.to_numpy()
+
+		for i, cid in enumerate(userItemSim.columns):
+			userTend = userItemSimMat[userIdNum][i]
+			# userTend = userItemSim.loc[userId][cid]
+			if userTend > tend:
+				itemIdSim.append((cid, userTend))
 
 		itemIdSim.sort(key = lambda element : element[1], reverse=True)
 
 		# 지역에 따른 필터링
-		count = 0
-		for item in itemIdSim:
-			itemDetail = self.getAreaDetails(cursor, item[0], areaCode, sigunguCode)
 
-			if type(itemDetail) == dict:
-			# 상위부터 순서대로 딕셔너리에 넣음
-				recommends['area'].append(item[0])
-				recommends['detail'][item[0]] = itemDetail
+		toRecommendList = list()
+		if areaCode != 0:
+			sql = "select contentId from recommend_area where areaCode=" + str(areaCode)
+			if sigunguCode != 0:
+				sql += " and sigunguCode=" + str(sigunguCode)
 
-				count +=1
+			sql += ";"
+			cursor.execute(sql)
+			areasInAreaCode = cursor.fetchall()
+
+			count = 0
+			for area in areasInAreaCode:
 				if count >= maxAreas:
 					break
 
+				for item in itemIdSim:
+					if area[0] == item[0]:
+						toRecommendList.append(area[0])
+						count += 1
+						break
+		else:
+			count = 0
+			for item in itemIdSim:
+				if count >= maxAreas:
+					break
+
+				toRecommendList.append(item[0])
+				count +=1
+
+		count = 0
+		for cid in toRecommendList:
+			itemDetail = self.getAreaDetails(cursor, cid)
+			recommends.append(itemDetail)
+
+			count +=1
+			if count >= maxAreas:
+				break
+
 		return recommends
 
-	def getAreaDetails(self, cursor, contentId, areaCode, sigunguCode):
+	def getAreaDetails(self, cursor, contentId):
 		sql = "select * from recommend_area where contentId="
 		sql += str(contentId)
-
-		if areaCode != 0:
-			sql += " and areaCode="
-			sql += str(areaCode)
-
-			if sigunguCode !=0:
-				sql += " and sigunguCode="
-				sql += str(sigunguCode)
-
 		sql += ";"
 
 		rst = cursor.execute(sql)
+		data = cursor.fetchall()
 
-		if rst > 0:
-			data = cursor.fetchall()
-			detail = self.makeDict(data[0])
-			return detail
-		else:
-			return -1
+		detail = self.makeDict(data[0])
+
+		return detail
 
 	def makeDict(self, data):
 		result = dict()
@@ -221,9 +248,7 @@ class FirstTesterManager:
 		    categories.append(pickle.load(file))
 		    file.close()
 
-		testSet = dict()
-		testSet['area'] = list()
-		testSet['detail'] = dict()
+		testSet = list()
 
 		for c1 in range(categories[0]['area']['size']):
 		    cat1Id=categories[0]['area']['items'][c1]
@@ -245,8 +270,7 @@ class FirstTesterManager:
 
 		            	testArea = self.makeDict(areas[0])
 
-		            	testSet['area'].append(areas[0][0])
-		            	testSet['detail'][areas[0][0]] = testArea
+		            	testSet.append(testArea)
 
 		file = open(path + "testSet.dict", "wb")
 		pickle.dump(testSet,file)
@@ -270,12 +294,39 @@ class FirstTesterManager:
 		return result
 
 if __name__ == '__main__':
+	# start = time.time()
 	# analyzer = UserItemSimilarityAnalyzer()
 	# analyzer.updateSimilarity(LOCAL_PATH)
+	# # analyzer.storeHomeRecommend(LOCAL_PATH)
+	# # print("done")
+	# print(time.time() - start)
 	
-	recommender = ContentBaseRecommender()
-	recommends = recommender.getRecommendedArea("jn8121@naver.com", 0, 0, LOCAL_PATH)
-	print(recommends)
+	# start = time.time()
+	
+	# recommender = ContentBaseRecommender()
+	# recommends = recommender.getRecommendedArea("jn8121@naver.com", 32, 1, LOCAL_PATH)
+
+	# print("total: ",time.time() - start)
+
+	# start = time.time()
+	
+	# recommender = ContentBaseRecommender()
+	# recommends = recommender.getRecommendedArea("jn8121@naver.com", 32, 0, LOCAL_PATH)
+	# print(len(recommends))
+	
+	# print(time.time() - start)
+
+	# start = time.time()
+	
+	# recommender = ContentBaseRecommender()
+	# recommends = recommender.getRecommendedArea("jn8121@naver.com", 0, 0, LOCAL_PATH)
+	# print(len(recommends))
+	
+	# print(time.time() - start)
+
+	# userItemSim = pd.read_pickle(LOCAL_PATH + "userItemSimilarity.df")
+	# print(userItemSim[1758000])
+	
 
 	# print(recommends)
 
@@ -292,7 +343,7 @@ if __name__ == '__main__':
 	# 		data = rtn_dict['detail'][cid]
 	# 		print(data['mapX'], ", ", data['mapY'])
 
-	# firstTesterManager = FirstTesterManager()
-	# firstTesterManager.makeTestSet(LOCAL_PATH)
-	# test_dict = firstTesterManager.getTestSet(LOCAL_PATH)
-	# print("test")
+	firstTesterManager = FirstTesterManager()
+	firstTesterManager.makeTestSet(LOCAL_PATH)
+	test_dict = firstTesterManager.getTestSet(LOCAL_PATH)
+	print(test_dict)

@@ -6,22 +6,30 @@ class RouteOptimizer:
 		self.INF = 987654321
 
 	def getOptimizedRoute(self, recommends):
+		sortedRecommendsList = list()
+
 		recommendsList = self.clusterAreas(recommends)
 
-		for clusteredRecommends in recommendsList:
-			clusteredRecommends['area'] = self.sortAreasByTSP(clusteredRecommends)
+		for i, clusteredList in enumerate(recommendsList):
+			minRoute = self.sortAreasByTSP(clusteredList)
 
-		return recommendsList
+			sortedList = list()
+
+			for i in minRoute:
+				sortedList.append(clusteredList[i])
+
+			sortedRecommendsList.append(sortedList)
+
+		return sortedRecommendsList
 
 	def clusterAreas(self, recommends, targetAreaNum=4):
-		areaSize = len(recommends['area'])
+		areaSize = len(recommends)
 		clusterSize = areaSize//targetAreaNum
 
 		mapXY = list()
 
-		for cid in recommends['area']:
-			curInfo = recommends['detail'][cid]
-			mapXY.append([curInfo['mapX'], curInfo['mapY']])
+		for areaObj in recommends:
+			mapXY.append([areaObj['mapX'], areaObj['mapY']])
 
 
 		routeSet = KMeans(n_clusters=clusterSize, random_state=0).fit(mapXY)
@@ -42,14 +50,11 @@ class RouteOptimizer:
 		recommendsList = list()
 
 		for k in range(len(targetLabels)):
-			clusteredRecommends = dict()
-			clusteredRecommends['area'] = list()
-			clusteredRecommends['detail'] = dict()
+			clusteredRecommends = list()
 
-			for i, cid in enumerate(recommends['area']):
+			for i, areaObj in enumerate(recommends):
 				if routeSet.labels_[i] == targetLabels[k]:
-					clusteredRecommends['area'].append(cid)
-					clusteredRecommends['detail'][cid] = recommends['detail'][cid]
+					clusteredRecommends.append(areaObj)
 
 			recommendsList.append(clusteredRecommends)
 
@@ -57,16 +62,16 @@ class RouteOptimizer:
 
 
 	def sortAreasByTSP(self, clusteredRecommends):
-		N = len(clusteredRecommends['area'])
+		N = len(clusteredRecommends)
 		board = np.zeros( (N,N) ) 
 
-		for i, cid in enumerate(clusteredRecommends['area']):
-			fromX = float(clusteredRecommends['detail'][cid]['mapX'])*1000
-			fromY = float(clusteredRecommends['detail'][cid]['mapY'])*1000
+		for i, areaObj in enumerate(clusteredRecommends):
+			fromX = float(areaObj['mapX'])*1000
+			fromY = float(areaObj['mapY'])*1000
 
-			for j, tCid in enumerate(clusteredRecommends['area']):
-				toX = float(clusteredRecommends['detail'][tCid]['mapX'])*1000
-				toY = float(clusteredRecommends['detail'][tCid]['mapY'])*1000
+			for j, tAreaObj in enumerate(clusteredRecommends):
+				toX = float(tAreaObj['mapX'])*1000
+				toY = float(tAreaObj['mapY'])*1000
 
 				board[i][j] = ((fromX - toX)**2 + (fromY - toY)**2)**0.5
 
@@ -87,12 +92,12 @@ class RouteOptimizer:
 		minRoute = list()
 		self.getRoute(start,(1<<start),route[start],minRoute)
 
-		rstAreaList = list()
+		# rstAreaList = list()
 
-		for i in minRoute:
-			rstAreaList.append(clusteredRecommends['area'][i])
+		# for i in minRoute:
+		# 	rstAreaList.append(clusteredRecommends[i])
 
-		return rstAreaList
+		return minRoute
 
 	def TSP(self, cur, visited, route, DP, board, N):
 		if DP[cur][visited] is not None:
@@ -120,29 +125,30 @@ class RouteOptimizer:
 			self.getRoute(nextNode, visited | (1 << (nextNode)), route, minRoute)
 
 if __name__ == "__main__":
-	dict1 = {
-		'area':[1,2,3,4],
-		'detail':{
-			1:{
-				'mapX':10.152255,
-				'mapY':10.212255
-			},
-			2:{
-				'mapX':10.122255,
-				'mapY':10.132255
-			},
-			3:{
-				'mapX':10.112255,
-				'mapY':10.112255
-			},
-			4:{
-				'mapX':10.112255,
-				'mapY':11.012255
-			}
+	dict1 = [
+		{
+			'mapX':10.152255,
+			'mapY':10.212255
+		},
+		{
+			'mapX':10.112255,
+			'mapY':11.012255
+		},
+		{
+			'mapX':10.122255,
+			'mapY':10.132255
+		},
+		{
+			'mapX':10.112255,
+			'mapY':10.112255
 		}
-	}
+	]
 
 	routeOptimizer = RouteOptimizer()
+	print(dict1)
+	# rst = routeOptimizer.clusterAreas(dict1)
+	# print(rst)
 	rst = routeOptimizer.getOptimizedRoute(dict1)
+	# print(dict1)
 	print(rst)
 

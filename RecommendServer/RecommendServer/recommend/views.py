@@ -13,66 +13,41 @@ from rest_framework import filters
 from recommend.recommender import contentbase, collaborative, merge, route
 from django.db.models import Q
 
-# class SearchAreaByQuery(generics.ListAPIView):
-# 	queryset = Area.objects.all()
-# 	serializer_class = AreaSerializer
-# 	search_fields = ['title', 'overview']
-# 	filter_backends = [filters.SearchFilter]
-	
-# 	# filter_backends = [ DjangoFilterBackend ]
-# 	# filter_fields = ['readCount', 'contentId', 'contentTypeId', 'areaCode', 'sigunguCode', 'cat1', 'cat2', 'cat3', 'mapX', 'mapY', 'mLevel', 'title', 'firstImage', 'firstImage2', 'homepage', 'overview', 'tel', 'addr1', 'addr2', 'zipCode']
-
-# 	# def isValidQueryParams(self, queryParams):
-# 	# 	if len(queryParams.keys()) == 0:
-# 	# 		return False
-
-# 	# 	for query in queryParams.keys():
-# 	# 		if query not in self.filter_fields:
-# 	# 			return False
-# 	# 	return True
-
-# 	# def get(self, request, *args, **kwargs):
-# 	# 	if not self.isValidQueryParams(request.query_params):
-# 	# 		return Response(status=status.HTTP_204_NO_CONTENT)
-# 	# 	return super(SearchAreaByQuery, self).get(request, *args, **kwargs)
-
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 def searchAreaByQuery(request):
 	if request.method == 'GET':
 		text = request.GET.get('search',None)
 		areaCode = int(request.GET.get('areaCode',0))
+		sigunguCode = int(request.GET.get('sigunguCode',0))
 
-		area = Area.objects.filter(areaCode__exact=areaCode)
-		area = area.filter( Q(title__contains=text) | Q(overview__contains=text) )
+		if text is None:
+			return Response(list())
+
+		if areaCode == 0 and sigunguCode == 0:
+			area = Area.objects.filter( Q(title__contains=text) | Q(overview__contains=text) )
+		else:
+			area = Area.objects.filter( Q(title__contains=text) | Q(overview__contains=text) )
+			if areaCode != 0:
+				area = area.filter(areaCode__exact=areaCode)
+			if sigunguCode != 0:
+				area = area.filter(sigunguCode__exact=sigunguCode)
+			
 
 		areaSerializer = AreaSerializer(area, many=True)
-
-		print(areaSerializer)
 
 		return Response(areaSerializer.data)
 
 
-@api_view(['GET', 'PUT', 'DELETE'])
+@api_view(['GET', 'POST'])
 def searchAreaById(request, cid):
-    try:
-        area = Area.objects.get(contentId=cid)
-    except Area.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+	if request.method == 'GET':
+		try:
+			area = Area.objects.get(contentId=cid)
+		except Area.DoesNotExist:
+			return Response(status=status.HTTP_404_NOT_FOUND)
 
-    if request.method == 'GET':
-        serializer = AreaSerializer(area)
-        return Response(serializer.data)
-
-    # elif request.method == 'PUT':
-    #     serializer = AreaSerializer(area, data=request.data)
-    #     if serializer.is_valid():
-    #         serializer.save()
-    #         return Response(serializer.data)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    # elif request.method == 'DELETE':
-    #     area.delete()
-    #     return Response(status=status.HTTP_204_NO_CONTENT)
+		serializer = AreaSerializer(area)
+		return Response(serializer.data)
 
 @api_view(['GET', 'POST'])
 def getAllAreas(request):
@@ -81,14 +56,6 @@ def getAllAreas(request):
         serializer = AreaSerializer(areas, many=True)
         return Response(serializer.data)
 
-    # elif request.method == 'POST':
-    #     serializer = AreaSerializer(data=request.data)
-    #     if serializer.is_valid():
-    #         serializer.save()
-    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 @api_view(['GET', 'POST'])
 def getRecommendsByUser(request):
 	if request.method == 'GET':
@@ -96,34 +63,25 @@ def getRecommendsByUser(request):
 		areaCode = int(request.GET.get('areaCode',0))
 		sigunguCode = int(request.GET.get('sigunguCode',0))
 
-		contentBaseRecommender = contentbase.ContentBaseRecommender()
-		collaborativeRecommender = collaborative.CollaborativeRecommender()
-		recommendMerger = merge.RecommendMerger()
-		routeOptimizer = route.RouteOptimizer()
+		print(userId)
 
-		contentBasedRecommends = contentBaseRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
-		predictedRecommends = collaborativeRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+		if userId is None:
+			return Response(list())
 
+		colRecommender = collaborative.CollaborativeRecommender()
+		colRecommends = colRecommender.getRecommendedArea(userId,areaCode,sigunguCode)
+		
+		conRecommender = contentbase.ContentBaseRecommender()
+		conRecommends = conRecommender.getRecommendedArea(userId,areaCode,sigunguCode)
 
-		recommends = recommendMerger.merge(contentBasedRecommends, predictedRecommends)
+		merger = merge.RecommendMerger()
+		recommends = merger.merge(colRecommends, conRecommends)
 
-		for i in range(5):
-			try:
-				contentBasedRecommends = contentBaseRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
-				predictedRecommends = collaborativeRecommender.getRecommendedArea(userId, areaCode, sigunguCode)
+		if areaCode != 0:
+			routeOptimizer = route.RouteOptimizer()
+			recommends = routeOptimizer.getOptimizedRoute(recommends)
 
-				recommends = recommendMerger.merge(contentBasedRecommends, predictedRecommends)
-				
-				if areaCode != 0:
-					resultList = routeOptimizer.getOptimizedRoute(recommends)
-					return Response(resultList)
-				else:
-					return JsonResponse(recommends)
-			except:
-				recommends = "get recommends fail"
-				continue
-
-		return Response(recommends, status=status.HTTP_204_NO_CONTENT)
+		return Response(recommends)
 
 	elif request.method == 'POST':
 		return Response(status=status.HTTP_400_BAD_REQUEST)
@@ -139,11 +97,7 @@ def getTestSet(request):
 			except:
 				result = "get recommend fail"
 
-		return JsonResponse(result)
-
-	# elif request.method == 'POST':
-	# 	return Response(status=status.HTTP_400_BAD_REQUEST)
-
+		return Response(result)
 
 
 @api_view(['GET', 'POST'])

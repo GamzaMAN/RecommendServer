@@ -5,6 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 
 import pymysql
 from secretInfo import mysqlInfo
+import time
 
 GLOBAL_PATH = "./recommend/recommender/_cache_data/"
 LOCAL_PATH = "./_cache_data/"
@@ -72,17 +73,27 @@ class CollaborativeRecommender:
 		elif sigunguCode==0:
 			maxAreas = 60
 
-		recommends = dict()
-		recommends['area'] = list()
-		recommends['detail'] = dict()
+		recommends = list()
+		# recommends = dict()
+		# recommends['area'] = list()
+		# recommends['detail'] = dict()
 
 		# 해당 사용자에 대한 여행지 contentId 추출
 
+		userIdNum = 0
+		for uid in userPredCount.index:
+			if uid == userId:
+				break
+			userIdNum += 1
+
+		userPredCountMat = userPredCount.to_numpy()
+
 		itemIdPred = list()
 
-		for cid in userPredCount.columns:
-			if userPredCount.loc[userId][cid] > tend:
-				itemIdPred.append((cid, userPredCount.loc[userId][cid]))
+		for i, cid in enumerate(userPredCount.columns):
+			userTend = userPredCountMat[userIdNum][i]
+			if userTend > tend:
+				itemIdPred.append((cid, userTend))
 
 		itemIdPred.sort(key = lambda element : element[1], reverse=True)
 
@@ -93,8 +104,9 @@ class CollaborativeRecommender:
 
 			if type(itemDetail) == dict:
 			# 상위부터 순서대로 딕셔너리에 넣음
-				recommends['area'].append(item[0])
-				recommends['detail'][item[0]] = itemDetail
+				# recommends['area'].append(item[0])
+				# recommends['detail'][item[0]] = itemDetail
+				recommends.append(itemDetail)
 
 				count +=1
 				if count >= maxAreas:
@@ -136,7 +148,11 @@ class CollaborativeRecommender:
 		return result
 
 if __name__ == "__main__":
-	userRelationAnalyzer = UserRelationAnalyzer()
-	userRelationAnalyzer.updatePrediction(LOCAL_PATH)
-	# areaRecommender = AreaRecommender()
-	# recommends = areaRecommender.getRecommendedArea("jn8121@naver.com", 32, 0, LOCAL_PATH)
+	# userRelationAnalyzer = UserRelationAnalyzer()
+	# userRelationAnalyzer.updatePrediction(LOCAL_PATH)
+	start = time.time()
+	areaRecommender = CollaborativeRecommender()
+	recommends = areaRecommender.getRecommendedArea("jn8121@naver.com", 32, 0, LOCAL_PATH)
+
+	print(time.time() - start)
+	# print(recommends)
